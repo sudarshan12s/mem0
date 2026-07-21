@@ -48,6 +48,28 @@ export interface VectorStoreConfig {
   [key: string]: any;
 }
 
+/** Configuration for the Oracle Database AI Vector Search vector store. */
+export interface OracleAIVectorSearchConfig extends VectorStoreConfig {
+  /** `node-oracledb` connection attributes, such as user, password, and connectString. */
+  connectionParams?: Record<string, any>;
+  /** Existing `node-oracledb` Connection or Pool. */
+  client?: any;
+  useConnectionPool?: boolean;
+  embeddingModelDims?: number;
+  distanceMetric?:
+    | "EUCLIDEAN"
+    | "EUCLIDEAN_SQUARED"
+    | "COSINE"
+    | "DOT"
+    | "HAMMING"
+    | "MANHATTAN";
+  doCreateIndex?: boolean;
+  indexType?: "HNSW" | "IVF";
+  indexName?: string;
+  indexParameters?: Record<string, number>;
+  indexAccuracy?: number;
+}
+
 export interface HistoryStoreConfig {
   provider: string;
   config: {
