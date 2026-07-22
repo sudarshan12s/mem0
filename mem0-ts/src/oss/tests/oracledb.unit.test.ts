@@ -214,30 +214,25 @@ describe("OracleAIVectorSearch", () => {
     expect(mockCommit).toHaveBeenCalledTimes(2);
   });
 
-  it("binds vectors as Float32Array and payloads as Oracle JSON", async () => {
+  it("binds Float32 vectors and payloads using Oracle vector and JSON types", async () => {
     const store = createStore();
 
     await store.insert([[0.1, 0.2, 0.3]], ["memory-1"], [{ topic: "oracle" }]);
 
     expect(mockExecuteMany).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO "oracle_memories"'),
-      [
-        expect.objectContaining({
-          id: "memory-1",
-          vector: expect.any(Float32Array),
-          payload: { topic: "oracle" },
-        }),
-      ],
+      expect.stringContaining('MERGE INTO "oracle_memories"'),
+      [["memory-1", expect.any(Float32Array), { topic: "oracle" }]],
       expect.objectContaining({
-        bindDefs: expect.objectContaining({
-          vector: { type: "VECTOR" },
-          payload: { type: "JSON" },
-        }),
+        bindDefs: [
+          { type: "STRING", maxSize: 36 },
+          { type: "VECTOR" },
+          { type: "JSON" },
+        ],
       }),
     );
   });
 
-  it("uses JSON_EXISTS filters and returns Oracle distance scores", async () => {
+  it("uses JSON_EXISTS filters and converts cosine distance to similarity", async () => {
     mockExecute.mockResolvedValueOnce({ rows: [] });
     mockExecute.mockResolvedValueOnce({ rows: [] });
     mockExecute.mockResolvedValueOnce({
@@ -250,12 +245,47 @@ describe("OracleAIVectorSearch", () => {
     });
 
     expect(results).toEqual([
-      { id: "memory-1", payload: { topic: "oracle" }, score: 0.125 },
+      { id: "memory-1", payload: { topic: "oracle" }, score: 0.875 },
     ]);
     expect(mockExecute).toHaveBeenLastCalledWith(
       expect.stringContaining("JSON_EXISTS(payload"),
       expect.objectContaining({ filter_0: "oracle", limit: 1 }),
       { outFormat: "ARRAY" },
+    );
+    expect(mockExecute.mock.calls.at(-1)?.[0]).not.toContain(
+      "VECTOR_INDEX_TRANSFORM",
+    );
+  });
+
+  it("keeps non-cosine Oracle metrics as distances", async () => {
+    mockExecute.mockResolvedValueOnce({ rows: [] });
+    mockExecute.mockResolvedValueOnce({ rows: [] });
+    mockExecute.mockResolvedValueOnce({
+      rows: [["memory-1", { topic: "oracle" }, 0.125]],
+    });
+    const store = new OracleAIVectorSearch({
+      client: mockConnection,
+      collectionName: "oracle_memories",
+      embeddingModelDims: 3,
+      distanceMetric: "EUCLIDEAN",
+      doCreateIndex: false,
+    });
+
+    const results = await store.search([0.1, 0.2, 0.3], 1);
+
+    expect(results[0]?.score).toBe(0.125);
+  });
+
+  it("uses VECTOR_INDEX_TRANSFORM for unfiltered searches", async () => {
+    mockExecute.mockResolvedValueOnce({ rows: [] });
+    mockExecute.mockResolvedValueOnce({ rows: [] });
+    mockExecute.mockResolvedValueOnce({ rows: [] });
+    const store = createStore();
+
+    await store.search([0.1, 0.2, 0.3], 1);
+
+    expect(mockExecute.mock.calls.at(-1)?.[0]).toContain(
+      'SELECT /*+ VECTOR_INDEX_TRANSFORM("oracle_memories") */',
     );
   });
 

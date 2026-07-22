@@ -241,7 +241,11 @@ export class OracleAIVectorSearch implements VectorStore {
     ];
 
     // Map positional arguments into arrays matching :1, :2, :3
-    const binds = vectors.map((vec, i) => [ids[i], vec, payloads[i] ?? {}]);
+    const binds = vectors.map((vec, i) => [
+      ids[i],
+      Float32Array.from(vec),
+      payloads[i] ?? {},
+    ]);
 
     await this.withConnection(async (connection) => {
       const result = await connection.executeMany(sql, binds, {
@@ -257,7 +261,10 @@ export class OracleAIVectorSearch implements VectorStore {
         );
 
         for (const err of result.batchErrors) {
-          const failedId = ids[err.offset] ?? "unknown";
+          const failedId =
+            typeof err.offset === "number"
+              ? (ids[err.offset] ?? "unknown")
+              : "unknown";
           console.error(
             `  - Row index [${err.offset}] (ID: ${failedId}): ${err.message}`,
           );
@@ -279,7 +286,13 @@ export class OracleAIVectorSearch implements VectorStore {
     filters?: SearchFilters,
   ): Promise<VectorStoreResult[]> {
     const { clause, binds } = buildFilters(filters);
-    const sql = `SELECT id, payload, VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric}) distance
+    // Oracle's vector index transform can be used only when there is no
+    // metadata predicate. Applying it to a filtered query may select the
+    // approximate top-k rows before the filter is evaluated.
+    const selectClause = clause
+      ? "SELECT"
+      : `SELECT /*+ VECTOR_INDEX_TRANSFORM(${this.collectionName}) */`;
+    const sql = `${selectClause} id, payload, VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric}) distance
       FROM ${this.collectionName} ${clause}
       ORDER BY VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric})
       FETCH FIRST :limit ROWS ONLY`;
@@ -293,12 +306,20 @@ export class OracleAIVectorSearch implements VectorStore {
         }),
         { outFormat: this.driver!.OUT_FORMAT_ARRAY },
       );
-      return (result.rows || []).map((row) => ({
-        id: row[0],
-        payload: parsePayload(row[1]),
-        // Oracle exposes VECTOR_DISTANCE, where lower scores are closer.
-        score: Number(row[2]),
-      }));
+      return (result.rows || []).map((row) => {
+        const distance = Number(row[2]);
+        return {
+          id: row[0],
+          payload: parsePayload(row[1]),
+          // Match pgvector's cosine-score convention: larger is more similar.
+          // Other Oracle metrics remain distances because they have no common,
+          // lossless conversion to a similarity score.
+          score:
+            this.distanceMetric === "COSINE"
+              ? Math.max(0, Math.min(1, 1 - distance))
+              : distance,
+        };
+      });
     });
   }
 
@@ -429,13 +450,14 @@ export class OracleAIVectorSearch implements VectorStore {
 function quoteIdentifier(identifier: string): string {
   const name = identifier.trim();
 
-  const validateRegex = /^(?:"[^"]+"|[^".]+)(?:\.(?:"[^"]+"|[^".]+))*$/;
+  const validateRegex =
+    /^(?:"[^"]+"|[A-Za-z][A-Za-z0-9_$#]*)(?:\.(?:"[^"]+"|[A-Za-z][A-Za-z0-9_$#]*))*$/;
   if (!validateRegex.test(name)) {
     throw new Error(`Invalid Oracle identifier: ${identifier}`);
   }
 
   // extracts parts of the identifier with quoted and unquoted.
-  const matchRegex = /"([^"]+)"|([^".]+)/g;
+  const matchRegex = /"([^"]+)"|([A-Za-z][A-Za-z0-9_$#]*)/g;
   const groups = [];
 
   for (const match of name.matchAll(matchRegex)) {

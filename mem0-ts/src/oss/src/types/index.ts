@@ -56,6 +56,11 @@ export interface OracleAIVectorSearchConfig extends VectorStoreConfig {
   client?: any;
   useConnectionPool?: boolean;
   embeddingModelDims?: number;
+  /**
+   * Oracle vector distance metric. COSINE search results are exposed as a
+   * normalized similarity score (`1 - distance`, larger is better); all other
+   * metrics return their raw distance in `VectorStoreResult.score`.
+   */
   distanceMetric?:
     | "EUCLIDEAN"
     | "EUCLIDEAN_SQUARED"

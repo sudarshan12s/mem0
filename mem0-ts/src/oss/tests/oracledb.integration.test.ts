@@ -61,6 +61,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
       id: "oracle-1",
       payload: { category: "books", rating: 5 },
     });
+    expect(searchResults[0]?.score).toBeCloseTo(1);
 
     await store.update("oracle-1", [0.9, 0.1, 0], {
       category: "books",
