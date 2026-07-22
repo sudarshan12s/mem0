@@ -117,10 +117,8 @@ export class OracleAIVectorSearch implements VectorStore {
       const result = await operation(connection);
       if (commit) await connection.commit();
       return result;
-    } catch (error) {
-      if (commit) await connection.rollback();
-      throw error;
     } finally {
+      // the rollback happens automatically on error.
       if (this.pool) await connection.close();
     }
   }
