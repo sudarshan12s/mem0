@@ -118,7 +118,7 @@ export class OracleAIVectorSearch implements VectorStore {
       if (commit) await connection.commit();
       return result;
     } finally {
-      // the rollback happens automatically on error.
+      // the transaction is left uncommitted; node-oracledb rolls it back automatically.
       if (this.pool) await connection.close();
     }
   }
@@ -273,8 +273,6 @@ export class OracleAIVectorSearch implements VectorStore {
           `Batch insert failed on ${result.batchErrors.length} record(s). Transaction rolled back.`,
         );
       }
-
-      await connection.commit();
     }, true);
   }
 

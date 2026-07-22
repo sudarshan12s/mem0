@@ -216,6 +216,8 @@ describe("OracleAIVectorSearch", () => {
 
   it("binds Float32 vectors and payloads using Oracle vector and JSON types", async () => {
     const store = createStore();
+    await store.initialize();
+    mockCommit.mockClear();
 
     await store.insert([[0.1, 0.2, 0.3]], ["memory-1"], [{ topic: "oracle" }]);
 
@@ -230,6 +232,7 @@ describe("OracleAIVectorSearch", () => {
         ],
       }),
     );
+    expect(mockCommit).toHaveBeenCalledTimes(1);
   });
 
   it("uses JSON_EXISTS filters and converts cosine distance to similarity", async () => {
