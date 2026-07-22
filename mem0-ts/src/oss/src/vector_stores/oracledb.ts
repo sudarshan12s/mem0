@@ -148,7 +148,7 @@ export class OracleAIVectorSearch implements VectorStore {
     await this.withConnection(
       (connection) =>
         connection.execute(
-          "CREATE TABLE IF NOT EXISTS mem0_migrations (user_id VARCHAR2(255))",
+          "CREATE TABLE IF NOT EXISTS mem0_migrations (id NUMBER DEFAULT 1 PRIMARY KEY CHECK (id = 1),user_id VARCHAR2(255) NOT NULL)",
         ),
       true,
       true,
@@ -208,26 +208,68 @@ export class OracleAIVectorSearch implements VectorStore {
   async insert(
     vectors: number[][],
     ids: string[],
-    payloads: Record<string, any>[],
+    payloads: Record<string, any>[] = [],
   ): Promise<void> {
+    if (!vectors.length) return;
+
     await this.initialize();
-    if (vectors.length !== ids.length || vectors.length !== payloads.length) {
-      throw new Error("Vector, ID, and payload counts must match");
-    }
+
+    const sql = `
+    MERGE INTO ${this.collectionName} target
+    USING (
+      SELECT 
+        :1 AS id, 
+        :2 AS vector, 
+        :3 AS payload 
+      FROM dual
+    ) src
+    ON (target.id = src.id)
+    WHEN MATCHED THEN
+      UPDATE SET 
+        target.vector = src.vector, 
+        target.payload = src.payload
+    WHEN NOT MATCHED THEN
+      INSERT (id, vector, payload)
+      VALUES (src.id, src.vector, src.payload)
+  `;
+
+    // Explicit bindDefs prevent driver type scanning across batch elements
+    const bindDefs = [
+      { type: this.driver!.STRING, maxSize: 36 },
+      { type: this.driver!.DB_TYPE_VECTOR },
+      { type: this.driver!.DB_TYPE_JSON },
+    ];
+
+    // Map positional arguments into arrays matching :1, :2, :3
+    const binds = vectors.map((vec, i) => [ids[i], vec, payloads[i] ?? {}]);
+
     await this.withConnection(async (connection) => {
-      await connection.executeMany(
-        `INSERT INTO ${this.collectionName} (id, vector, payload) VALUES (:id, :vector, :payload)`,
-        vectors.map((vector, index) =>
-          vectorBindParameters(ids[index], vector, payloads[index] || {}),
-        ),
-        {
-          bindDefs: {
-            id: { type: this.driver!.STRING, maxSize: 36 },
-            vector: { type: this.driver!.DB_TYPE_VECTOR },
-            payload: { type: this.driver!.DB_TYPE_JSON },
-          },
-        },
-      );
+      const result = await connection.executeMany(sql, binds, {
+        autoCommit: false,
+        batchErrors: true,
+        bindDefs,
+      });
+
+      // Handle partial row failures -> Strict All-or-None
+      if (result.batchErrors && result.batchErrors.length > 0) {
+        console.error(
+          `[OracleAIVectorSearch] Batch insert failed with ${result.batchErrors.length} row error(s). Rolling back transaction.`,
+        );
+
+        for (const err of result.batchErrors) {
+          const failedId = ids[err.offset] ?? "unknown";
+          console.error(
+            `  - Row index [${err.offset}] (ID: ${failedId}): ${err.message}`,
+          );
+        }
+
+        // Throwing aborts the callback -> withConnection performs connection.rollback()
+        throw new Error(
+          `Batch insert failed on ${result.batchErrors.length} record(s). Transaction rolled back.`,
+        );
+      }
+
+      await connection.commit();
     }, true);
   }
 
@@ -340,29 +382,38 @@ export class OracleAIVectorSearch implements VectorStore {
   }
 
   async getUserId(): Promise<string> {
+    const generated = uuidv4();
     return this.withConnection(async (connection) => {
+      // Single atomic MERGE handles concurrent race conditions
+      await connection.execute(
+        `MERGE INTO mem0_migrations m
+       USING (SELECT 1 AS id, :generated_id AS user_id FROM dual) src
+       ON (m.id = src.id)
+       WHEN NOT MATCHED THEN
+         INSERT (id, user_id) VALUES (src.id, src.user_id)`,
+        { generated_id: generated },
+      );
+
       const result = await connection.execute<[string]>(
-        "SELECT user_id FROM mem0_migrations FETCH FIRST 1 ROWS ONLY",
+        "SELECT user_id FROM mem0_migrations WHERE id = 1",
         [],
         { outFormat: this.driver!.OUT_FORMAT_ARRAY },
       );
-      const userId = result.rows?.[0]?.[0];
-      if (userId) return String(userId);
-      const generated = uuidv4();
-      await connection.execute(
-        "INSERT INTO mem0_migrations (user_id) VALUES (:user_id)",
-        { user_id: generated },
-      );
-      await connection.commit();
-      return generated;
-    });
+
+      return String(result.rows![0][0]);
+    }, true);
   }
 
   async setUserId(userId: string): Promise<void> {
     await this.withConnection(async (connection) => {
-      await connection.execute("DELETE FROM mem0_migrations");
       await connection.execute(
-        "INSERT INTO mem0_migrations (user_id) VALUES (:user_id)",
+        `MERGE INTO mem0_migrations m
+       USING (SELECT 1 AS id, :user_id AS user_id FROM dual) src
+       ON (m.id = src.id)
+       WHEN MATCHED THEN
+         UPDATE SET m.user_id = src.user_id
+       WHEN NOT MATCHED THEN
+         INSERT (id, user_id) VALUES (src.id, src.user_id)`,
         { user_id: userId },
       );
     }, true);
@@ -375,11 +426,23 @@ export class OracleAIVectorSearch implements VectorStore {
   }
 }
 
-function quoteIdentifier(name: string): string {
-  if (!/^[A-Za-z][A-Za-z0-9_$#]{0,127}$/.test(name)) {
-    throw new Error(`Invalid Oracle identifier: ${name}`);
+function quoteIdentifier(identifier: string): string {
+  const name = identifier.trim();
+
+  const validateRegex = /^(?:"[^"]+"|[^".]+)(?:\.(?:"[^"]+"|[^".]+))*$/;
+  if (!validateRegex.test(name)) {
+    throw new Error(`Invalid Oracle identifier: ${identifier}`);
   }
-  return `"${name}"`;
+
+  // extracts parts of the identifier with quoted and unquoted.
+  const matchRegex = /"([^"]+)"|([^".]+)/g;
+  const groups = [];
+
+  for (const match of name.matchAll(matchRegex)) {
+    groups.push(match[1] || match[2]);
+  }
+  const quotedParts = groups.map((g) => `"${g}"`);
+  return quotedParts.join(".");
 }
 
 type FilterState = {
