@@ -689,18 +689,6 @@ function oracleBindParameters(
   return values as unknown as oracledb.BindParameters;
 }
 
-function vectorBindParameters(
-  id: string,
-  vector: number[],
-  payload: Record<string, any>,
-): oracledb.BindParameters {
-  return oracleBindParameters({
-    id,
-    vector: Float32Array.from(vector),
-    payload,
-  });
-}
-
 async function loadOracleDriver(): Promise<OracleDriver> {
   // Keep the optional peer lazy-loaded until the Oracle store is initialized.
   const module = (await loadPeer(

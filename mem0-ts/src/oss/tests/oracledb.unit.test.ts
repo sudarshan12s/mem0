@@ -317,12 +317,12 @@ describe("OracleAIVectorSearch", () => {
     expect(store).toBeInstanceOf(OracleAIVectorSearch);
   });
 
-  it("rolls back the transaction if creation fails", async () => {
+  it("relies on node-oracledb automatic rollback if creation fails", async () => {
     mockExecute.mockRejectedValueOnce(new Error("DDL Error"));
     const store = createStore();
 
     await expect(store.initialize()).rejects.toThrow("DDL Error");
-    expect(mockRollback).toHaveBeenCalled();
+    expect(mockRollback).not.toHaveBeenCalled();
   });
 
   it("does not close caller-provided connections", async () => {
