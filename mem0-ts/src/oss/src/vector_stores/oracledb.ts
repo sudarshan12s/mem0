@@ -309,7 +309,7 @@ export class OracleAIVectorSearch implements VectorStore {
         return {
           id: row[0],
           payload: parsePayload(row[1]),
-          // Match pgvector's cosine-score convention: larger is more similar.
+          // Match other vector stores cosine-score convention: larger is more similar.
           // Other Oracle metrics remain distances because they have no common,
           // lossless conversion to a similarity score.
           score:
