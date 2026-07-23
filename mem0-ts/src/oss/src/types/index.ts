@@ -50,7 +50,10 @@ export interface VectorStoreConfig {
 
 /** Configuration for the Oracle Database AI Vector Search vector store. */
 export interface OracleAIVectorSearchConfig extends VectorStoreConfig {
-  /** `node-oracledb` connection attributes, such as user, password, and connectString. */
+  /**
+   * `node-oracledb` connection or pool attributes, such as user, password,
+   * connectString, poolMin, and poolMax.
+   */
   connectionParams?: Record<string, any>;
   /** Existing `node-oracledb` Connection or Pool. */
   client?: any;

@@ -64,6 +64,8 @@ describe("OracleAIVectorSearch", () => {
         user: "oracle_user",
         password: "oracle_password",
         connectString: "localhost:1521/freepdb1",
+        poolMin: 2,
+        poolMax: 8,
       },
       collectionName: "pooled_memories",
       doCreateIndex: false,
@@ -76,8 +78,8 @@ describe("OracleAIVectorSearch", () => {
         user: "oracle_user",
         password: "oracle_password",
         connectString: "localhost:1521/freepdb1",
-        poolMin: 1,
-        poolMax: 4,
+        poolMin: 2,
+        poolMax: 8,
       }),
     );
     expect(mockPoolGetConnection).toHaveBeenCalled();

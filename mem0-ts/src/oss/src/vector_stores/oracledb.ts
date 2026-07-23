@@ -87,11 +87,9 @@ export class OracleAIVectorSearch implements VectorStore {
         this.connection = this.config.client;
       }
     } else if (this.config.useConnectionPool !== false) {
-      this.pool = await driver.createPool({
-        poolMin: 1,
-        poolMax: 4,
-        ...this.config.connectionParams,
-      } as oracledb.PoolAttributes);
+      this.pool = await driver.createPool(
+        this.config.connectionParams as oracledb.PoolAttributes,
+      );
       this.ownsClient = true;
     } else {
       this.connection = await driver.getConnection(
