@@ -1,6 +1,7 @@
 /// <reference types="jest" />
 
 import { OracleAIVectorSearch } from "../src/vector_stores/oracledb";
+import type { SearchFilters } from "../src/types";
 
 const oracleConfig = {
   user: process.env.ORACLE_USERNAME,
@@ -100,6 +101,127 @@ describeOracle("OracleAIVectorSearch integration", () => {
 
     await store.delete("oracle-2");
     expect(await store.get("oracle-2")).toBeNull();
+  });
+
+  it("supports every Oracle metadata filter operator", async () => {
+    await store.insert(
+      [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+      ],
+      ["filter-1", "filter-2", "filter-3"],
+      [
+        {
+          filter_test: "operators",
+          category: "books",
+          rating: 5,
+          title: "Oracle Vector Search",
+          published: true,
+          tags: ["oracle", "ai"],
+          profile: { tier: "pro" },
+          users: [{ role: "admin" }],
+        },
+        {
+          filter_test: "operators",
+          category: "books",
+          rating: 3,
+          title: "Postgres Basics",
+          published: false,
+          tags: ["db"],
+          profile: { tier: "free" },
+          users: [{ role: "reader" }],
+        },
+        {
+          filter_test: "operators",
+          category: "music",
+          rating: 4,
+          title: "oracle in Music",
+          tags: ["ai"],
+          profile: { tier: "pro" },
+          users: [{ role: "editor" }],
+        },
+      ],
+    );
+
+    const idsFor = async (filters: SearchFilters) =>
+      (
+        await store.search([1, 0, 0], 10, {
+          filter_test: "operators",
+          ...filters,
+        })
+      )
+        .map((result) => result.id)
+        .sort();
+
+    await expect(idsFor({ category: "books" })).resolves.toEqual([
+      "filter-1",
+      "filter-2",
+    ]);
+    await expect(idsFor({ rating: { eq: 5 } })).resolves.toEqual(["filter-1"]);
+    await expect(idsFor({ rating: { ne: 5 } })).resolves.toEqual([
+      "filter-2",
+      "filter-3",
+    ]);
+    await expect(idsFor({ rating: { gt: 3 } })).resolves.toEqual([
+      "filter-1",
+      "filter-3",
+    ]);
+    await expect(idsFor({ rating: { gte: 4 } })).resolves.toEqual([
+      "filter-1",
+      "filter-3",
+    ]);
+    await expect(idsFor({ rating: { lt: 4 } })).resolves.toEqual(["filter-2"]);
+    await expect(idsFor({ rating: { lte: 4 } })).resolves.toEqual([
+      "filter-2",
+      "filter-3",
+    ]);
+    await expect(idsFor({ category: { in: ["music"] } })).resolves.toEqual([
+      "filter-3",
+    ]);
+    await expect(idsFor({ category: { nin: ["books"] } })).resolves.toEqual([
+      "filter-3",
+    ]);
+    await expect(idsFor({ rating: { between: [4, 5] } })).resolves.toEqual([
+      "filter-1",
+      "filter-3",
+    ]);
+    await expect(idsFor({ published: { exists: true } })).resolves.toEqual([
+      "filter-1",
+      "filter-2",
+    ]);
+    await expect(idsFor({ published: { exists: false } })).resolves.toEqual([
+      "filter-3",
+    ]);
+    await expect(idsFor({ title: { contains: "Vector" } })).resolves.toEqual([
+      "filter-1",
+    ]);
+    await expect(idsFor({ title: { icontains: "ORACLE" } })).resolves.toEqual([
+      "filter-1",
+      "filter-3",
+    ]);
+    await expect(idsFor({ "profile.tier": "pro" })).resolves.toEqual([
+      "filter-1",
+      "filter-3",
+    ]);
+    await expect(idsFor({ "users[*].role": "admin" })).resolves.toEqual([
+      "filter-1",
+    ]);
+    await expect(
+      idsFor({ $or: [{ category: "music" }, { rating: { lt: 4 } }] }),
+    ).resolves.toEqual(["filter-2", "filter-3"]);
+    await expect(
+      idsFor({ $and: [{ rating: { gte: 3 } }, { rating: { lte: 4 } }] }),
+    ).resolves.toEqual(["filter-2", "filter-3"]);
+    await expect(idsFor({ $not: [{ rating: { gte: 4 } }] })).resolves.toEqual([
+      "filter-2",
+    ]);
+    await expect(idsFor({ category: { in: [] } })).resolves.toEqual([]);
+    await expect(idsFor({ category: { nin: [] } })).resolves.toEqual([
+      "filter-1",
+      "filter-2",
+      "filter-3",
+    ]);
   });
 
   it("persists the configured user ID", async () => {
