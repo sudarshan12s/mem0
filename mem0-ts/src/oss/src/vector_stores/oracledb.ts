@@ -10,6 +10,7 @@ import { loadPeer } from "../utils/load_peer";
 import type { VectorStore } from "./base";
 
 const METADATA_KEY_PATTERN = /^[a-zA-Z0-9_.\[\]*]+$/;
+const MIGRATIONS_TABLE = "mem0_oracle_migrations";
 const DISTANCE_METRICS = new Set([
   "EUCLIDEAN",
   "EUCLIDEAN_SQUARED",
@@ -144,7 +145,7 @@ export class OracleAIVectorSearch implements VectorStore {
     await this.withConnection(
       (connection) =>
         connection.execute(
-          "CREATE TABLE IF NOT EXISTS mem0_migrations (id NUMBER DEFAULT 1 PRIMARY KEY CHECK (id = 1),user_id VARCHAR2(255) NOT NULL)",
+          `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (id NUMBER DEFAULT 1 PRIMARY KEY CHECK (id = 1),user_id VARCHAR2(255) NOT NULL)`,
         ),
       true,
       true,
@@ -401,7 +402,7 @@ export class OracleAIVectorSearch implements VectorStore {
     return this.withConnection(async (connection) => {
       // Single atomic MERGE handles concurrent race conditions
       await connection.execute(
-        `MERGE INTO mem0_migrations m
+        `MERGE INTO ${MIGRATIONS_TABLE} m
        USING (SELECT 1 AS id, :generated_id AS user_id FROM dual) src
        ON (m.id = src.id)
        WHEN NOT MATCHED THEN
@@ -410,7 +411,7 @@ export class OracleAIVectorSearch implements VectorStore {
       );
 
       const result = await connection.execute<[string]>(
-        "SELECT user_id FROM mem0_migrations WHERE id = 1",
+        `SELECT user_id FROM ${MIGRATIONS_TABLE} WHERE id = 1`,
         [],
         { outFormat: this.driver!.OUT_FORMAT_ARRAY },
       );
@@ -422,7 +423,7 @@ export class OracleAIVectorSearch implements VectorStore {
   async setUserId(userId: string): Promise<void> {
     await this.withConnection(async (connection) => {
       await connection.execute(
-        `MERGE INTO mem0_migrations m
+        `MERGE INTO ${MIGRATIONS_TABLE} m
        USING (SELECT 1 AS id, :user_id AS user_id FROM dual) src
        ON (m.id = src.id)
        WHEN MATCHED THEN

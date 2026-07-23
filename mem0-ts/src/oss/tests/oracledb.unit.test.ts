@@ -102,6 +102,31 @@ describe("OracleAIVectorSearch", () => {
     expect(mockCreatePool).not.toHaveBeenCalled();
   });
 
+  it("uses a caller-provided pool", async () => {
+    const store = new OracleAIVectorSearch({
+      client: mockPool,
+      collectionName: "provided_pool_memories",
+      doCreateIndex: false,
+    });
+
+    await store.initialize();
+
+    expect(mockPoolGetConnection).toHaveBeenCalled();
+    expect(mockCreatePool).not.toHaveBeenCalled();
+  });
+
+  it("loads the optional driver through its default module export", async () => {
+    mockLoadPeer.mockImplementationOnce(async (_name, _feature, load) => {
+      await load();
+      return { default: mockDriver };
+    });
+    const store = createStore();
+
+    await store.initialize();
+
+    expect(mockLoadPeer).toHaveBeenCalled();
+  });
+
   it("applies index and distance configuration to generated SQL", async () => {
     const store = new OracleAIVectorSearch({
       client: mockConnection,
@@ -177,6 +202,43 @@ describe("OracleAIVectorSearch", () => {
     expect(
       () => new OracleAIVectorSearch({ ...baseConfig, indexAccuracy: 101 }),
     ).toThrow("indexAccuracy");
+    expect(
+      () =>
+        new OracleAIVectorSearch({
+          ...baseConfig,
+          indexParameters: { neighbors: 1 },
+        }),
+    ).toThrow("indexParameters.neighbors");
+  });
+
+  it("defensively validates index parameters if configuration is mutated", async () => {
+    const config = {
+      client: mockConnection,
+      collectionName: "mutated_index_memories",
+      doCreateIndex: true,
+      indexParameters: { neighbors: 2 },
+    };
+    const invalidValueStore = new OracleAIVectorSearch(config);
+    config.indexParameters = { neighbors: -1 };
+    await expect(invalidValueStore.initialize()).rejects.toThrow(
+      "indexParameters.neighbors must be a non-negative integer",
+    );
+
+    const extraConfig: {
+      client: typeof mockConnection;
+      collectionName: string;
+      doCreateIndex: boolean;
+      indexParameters: Record<string, number>;
+    } = {
+      ...config,
+      collectionName: "mutated_extra_index_memories",
+      indexParameters: { neighbors: 2 },
+    };
+    const unsupportedKeyStore = new OracleAIVectorSearch(extraConfig);
+    extraConfig.indexParameters = { neighbors: 2, unsupported: 1 };
+    await expect(unsupportedKeyStore.initialize()).rejects.toThrow(
+      "Unsupported HNSW index parameters: unsupported",
+    );
   });
 
   it("renders validated HNSW index parameters", async () => {
@@ -211,7 +273,9 @@ describe("OracleAIVectorSearch", () => {
       expect.stringContaining('CREATE TABLE IF NOT EXISTS "oracle_memories"'),
     );
     expect(mockExecute).toHaveBeenCalledWith(
-      expect.stringContaining("CREATE TABLE IF NOT EXISTS mem0_migrations"),
+      expect.stringContaining(
+        "CREATE TABLE IF NOT EXISTS mem0_oracle_migrations",
+      ),
     );
     expect(mockCommit).toHaveBeenCalledTimes(2);
   });
@@ -237,11 +301,37 @@ describe("OracleAIVectorSearch", () => {
     expect(mockCommit).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects a batch insert with Oracle batch errors", async () => {
+    const store = createStore();
+    await store.initialize();
+    mockCommit.mockClear();
+    mockExecuteMany.mockResolvedValueOnce({
+      batchErrors: [
+        { offset: 0, message: "invalid vector" },
+        { message: "missing offset" },
+      ],
+    });
+    const consoleError = jest.spyOn(console, "error").mockImplementation();
+
+    await expect(
+      store.insert(
+        [
+          [0.1, 0.2, 0.3],
+          [0.4, 0.5, 0.6],
+        ],
+        ["memory-1", "memory-2"],
+      ),
+    ).rejects.toThrow("Batch insert failed on 2 record(s)");
+
+    expect(mockCommit).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it("uses JSON_EXISTS filters and converts cosine distance to similarity", async () => {
     mockExecute.mockResolvedValueOnce({ rows: [] });
     mockExecute.mockResolvedValueOnce({ rows: [] });
     mockExecute.mockResolvedValueOnce({
-      rows: [["memory-1", { topic: "oracle" }, 0.125]],
+      rows: [["memory-1", Buffer.from('{"topic":"oracle"}'), 0.125]],
     });
     const store = createStore();
 

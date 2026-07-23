@@ -52,6 +52,10 @@ describeOracle("OracleAIVectorSearch integration", () => {
       ],
     );
 
+    const unfilteredResults = await store.search([1, 0, 0], 2);
+    expect(unfilteredResults.map((result) => result.id)).toContain("oracle-1");
+    expect(unfilteredResults[0]?.score).toBeCloseTo(1);
+
     const searchResults = await store.search([1, 0, 0], 5, {
       category: "books",
       rating: { gte: 4 },
@@ -63,6 +67,16 @@ describeOracle("OracleAIVectorSearch integration", () => {
     });
     expect(searchResults[0]?.score).toBeCloseTo(1);
 
+    // MERGE should update an existing vector rather than add a duplicate row.
+    await store.insert(
+      [[0, 0, 0.95]],
+      ["oracle-3"],
+      [{ category: "music", rating: 5, tags: ["ai", "upserted"] }],
+    );
+    expect(await store.get("oracle-3")).toMatchObject({
+      payload: { category: "music", rating: 5, tags: ["ai", "upserted"] },
+    });
+
     await store.update("oracle-1", [0.9, 0.1, 0], {
       category: "books",
       rating: 6,
@@ -71,6 +85,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
     expect(await store.get("oracle-1")).toMatchObject({
       payload: { category: "books", rating: 6 },
     });
+    expect(await store.get("missing-vector")).toBeNull();
 
     const [listed, count] = await store.list({ category: { in: ["books"] } });
     expect(count).toBe(2);
@@ -79,7 +94,51 @@ describeOracle("OracleAIVectorSearch integration", () => {
       "oracle-2",
     ]);
 
+    const [limited, total] = await store.list(undefined, 1);
+    expect(limited).toHaveLength(1);
+    expect(total).toBe(3);
+
     await store.delete("oracle-2");
     expect(await store.get("oracle-2")).toBeNull();
+  });
+
+  it("persists the configured user ID", async () => {
+    const originalUserId = await store.getUserId();
+    const configuredUserId = `integration-user-${Date.now()}`;
+
+    try {
+      await store.setUserId(configuredUserId);
+      await expect(store.getUserId()).resolves.toBe(configuredUserId);
+    } finally {
+      await store.setUserId(originalUserId);
+    }
+  });
+
+  it("supports direct connections and preserves non-cosine distance scores", async () => {
+    const directCollectionName = `${collectionName}_EUCLIDEAN`;
+    const directStore = new OracleAIVectorSearch({
+      connectionParams: oracleConfig,
+      collectionName: directCollectionName,
+      embeddingModelDims: 3,
+      distanceMetric: "EUCLIDEAN",
+      useConnectionPool: false,
+      doCreateIndex: false,
+    });
+
+    try {
+      await directStore.initialize();
+      await directStore.insert([[1, 0, 0]], ["direct-1"], [{ kind: "direct" }]);
+
+      const results = await directStore.search([0, 1, 0], 1);
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        id: "direct-1",
+        payload: { kind: "direct" },
+      });
+      expect(results[0]?.score).toBeCloseTo(Math.sqrt(2));
+    } finally {
+      await directStore.deleteCol();
+      await directStore.close();
+    }
   });
 });
