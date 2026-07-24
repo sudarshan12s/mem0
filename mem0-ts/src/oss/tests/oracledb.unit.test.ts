@@ -371,6 +371,7 @@ describe("OracleAIVectorSearch", () => {
     expect(mockExecute.mock.calls.at(-1)?.[0]).toContain(
       "FETCH APPROX FIRST :limit ROWS ONLY",
     );
+    expect(mockExecute.mock.calls.at(-1)?.[0]).toContain("ORDER BY distance");
   });
 
   it("keeps non-cosine Oracle metrics as distances", async () => {

@@ -291,9 +291,9 @@ export class OracleAIVectorSearch implements VectorStore {
     const selectClause = clause
       ? "SELECT"
       : `SELECT /*+ VECTOR_INDEX_TRANSFORM(${this.collectionName}) */`;
-    const sql = `${selectClause} id, payload, VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric}) distance
+    const sql = `${selectClause} id, payload, VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric}) AS distance
       FROM ${this.collectionName} ${clause}
-      ORDER BY VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric})
+      ORDER BY distance
       FETCH APPROX FIRST :limit ROWS ONLY`;
     return this.withConnection(async (connection) => {
       const result = await connection.execute<[string, unknown, number]>(
@@ -506,6 +506,9 @@ function buildFilterConditions(
     }
 
     validateMetadataKey(key);
+
+    // mem0 uses { key: "*" } to mean "key exists with any value".
+    // Check for property presence instead of comparing literal value == "*".
     if (value === "*") {
       clauses.push(`JSON_EXISTS(payload, '${jsonPath(key)}')`);
     } else if (Array.isArray(value)) {
