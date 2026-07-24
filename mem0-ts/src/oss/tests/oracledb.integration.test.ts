@@ -56,7 +56,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
 
     const unfilteredResults = await store.search([1, 0, 0], 2);
     expect(unfilteredResults.map((result) => result.id)).toContain("oracle-1");
-    expect(unfilteredResults[0]?.score).toBeCloseTo(1);
+    expect(unfilteredResults[0]?.score).toBeCloseTo(1, 4);
 
     const searchResults = await store.search([1, 0, 0], 5, {
       category: "books",
@@ -67,7 +67,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
       id: "oracle-1",
       payload: { category: "books", rating: 5 },
     });
-    expect(searchResults[0]?.score).toBeCloseTo(1);
+    expect(searchResults[0]?.score).toBeCloseTo(1, 4);
 
     // MERGE should update an existing vector rather than add a duplicate row.
     await store.insert(
@@ -225,7 +225,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
     ]);
   });
 
-  it("persists the configured user ID", async () => {
+  it("persists and restores the configured user ID", async () => {
     const originalUserId = await store.getUserId();
     const configuredUserId = `integration-user-${Date.now()}`;
 
@@ -270,7 +270,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
         id: "direct-1",
         payload: { kind: "direct" },
       });
-      expect(results[0]?.score).toBeCloseTo(Math.sqrt(2));
+      expect(results[0]?.score).toBeCloseTo(Math.sqrt(2), 4);
     } finally {
       await directStore.deleteCol();
       await directStore.close();

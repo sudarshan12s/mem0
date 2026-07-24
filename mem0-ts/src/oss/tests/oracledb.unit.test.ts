@@ -397,18 +397,21 @@ describe("OracleAIVectorSearch", () => {
     });
     const consoleError = jest.spyOn(console, "error").mockImplementation();
 
-    await expect(
-      store.insert(
-        [
-          [0.1, 0.2, 0.3],
-          [0.4, 0.5, 0.6],
-        ],
-        ["memory-1", "memory-2"],
-      ),
-    ).rejects.toThrow("Batch insert failed on 2 record(s)");
+    try {
+      await expect(
+        store.insert(
+          [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+          ],
+          ["memory-1", "memory-2"],
+        ),
+      ).rejects.toThrow("Batch insert failed on 2 record(s)");
 
-    expect(mockCommit).not.toHaveBeenCalled();
-    consoleError.mockRestore();
+      expect(mockCommit).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("uses JSON_EXISTS filters and converts cosine distance to similarity", async () => {
