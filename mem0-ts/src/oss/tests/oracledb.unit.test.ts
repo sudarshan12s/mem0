@@ -288,7 +288,7 @@ describe("OracleAIVectorSearch", () => {
     await store.insert([[0.1, 0.2, 0.3]], ["memory-1"], [{ topic: "oracle" }]);
 
     expect(mockExecuteMany).toHaveBeenCalledWith(
-      expect.stringContaining('MERGE INTO "oracle_memories"'),
+      expect.stringContaining('INSERT INTO "oracle_memories"'),
       [["memory-1", expect.any(Float32Array), { topic: "oracle" }]],
       expect.objectContaining({
         bindDefs: [
@@ -299,6 +299,24 @@ describe("OracleAIVectorSearch", () => {
       }),
     );
     expect(mockCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses MERGE only when mutateOnDuplicate is enabled", async () => {
+    const store = new OracleAIVectorSearch({
+      client: mockConnection,
+      collectionName: "upsert_memories",
+      embeddingModelDims: 3,
+      doCreateIndex: false,
+      mutateOnDuplicate: true,
+    });
+
+    await store.insert([[0.1, 0.2, 0.3]], ["memory-1"], [{ topic: "oracle" }]);
+
+    expect(mockExecuteMany).toHaveBeenCalledWith(
+      expect.stringContaining('MERGE INTO "upsert_memories"'),
+      expect.any(Array),
+      expect.any(Object),
+    );
   });
 
   it("rejects a batch insert with Oracle batch errors", async () => {
@@ -350,6 +368,9 @@ describe("OracleAIVectorSearch", () => {
     expect(mockExecute.mock.calls.at(-1)?.[0]).not.toContain(
       "VECTOR_INDEX_TRANSFORM",
     );
+    expect(mockExecute.mock.calls.at(-1)?.[0]).toContain(
+      "FETCH APPROX FIRST :limit ROWS ONLY",
+    );
   });
 
   it("keeps non-cosine Oracle metrics as distances", async () => {
@@ -381,6 +402,9 @@ describe("OracleAIVectorSearch", () => {
 
     expect(mockExecute.mock.calls.at(-1)?.[0]).toContain(
       'SELECT /*+ VECTOR_INDEX_TRANSFORM("oracle_memories") */',
+    );
+    expect(mockExecute.mock.calls.at(-1)?.[0]).toContain(
+      "FETCH APPROX FIRST :limit ROWS ONLY",
     );
   });
 

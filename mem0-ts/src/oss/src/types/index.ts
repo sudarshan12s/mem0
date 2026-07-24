@@ -72,6 +72,11 @@ export interface OracleAIVectorSearchConfig extends VectorStoreConfig {
     | "HAMMING"
     | "MANHATTAN";
   doCreateIndex?: boolean;
+  /**
+   * Update existing records with the same ID using MERGE. Defaults to false,
+   * so inserts use the faster INSERT statement and reject duplicate IDs.
+   */
+  mutateOnDuplicate?: boolean;
   indexType?: "HNSW" | "IVF";
   indexName?: string;
   indexParameters?: Record<string, number>;

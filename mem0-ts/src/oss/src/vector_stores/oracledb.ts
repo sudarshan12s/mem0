@@ -211,7 +211,10 @@ export class OracleAIVectorSearch implements VectorStore {
 
     await this.initialize();
 
-    const sql = `
+    const insertSql = `
+      INSERT INTO ${this.collectionName} (id, vector, payload)
+      VALUES (:1, :2, :3)`;
+    const mergeSql = `
     MERGE INTO ${this.collectionName} target
     USING (
       SELECT 
@@ -229,6 +232,7 @@ export class OracleAIVectorSearch implements VectorStore {
       INSERT (id, vector, payload)
       VALUES (src.id, src.vector, src.payload)
   `;
+    const sql = this.config.mutateOnDuplicate ? mergeSql : insertSql;
 
     // Explicit bindDefs prevent driver type scanning across batch elements
     const bindDefs = [
@@ -290,7 +294,7 @@ export class OracleAIVectorSearch implements VectorStore {
     const sql = `${selectClause} id, payload, VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric}) distance
       FROM ${this.collectionName} ${clause}
       ORDER BY VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric})
-      FETCH FIRST :limit ROWS ONLY`;
+      FETCH APPROX FIRST :limit ROWS ONLY`;
     return this.withConnection(async (connection) => {
       const result = await connection.execute<[string, unknown, number]>(
         sql,

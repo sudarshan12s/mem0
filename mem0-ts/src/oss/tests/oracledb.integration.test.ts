@@ -22,6 +22,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
       embeddingModelDims: 3,
       distanceMetric: "COSINE",
       useConnectionPool: true,
+      mutateOnDuplicate: true,
       // Index creation is covered by unit tests. Keeping it off makes the
       // CRUD/filter integration test independent of index-training state.
       doCreateIndex: false,
@@ -250,6 +251,18 @@ describeOracle("OracleAIVectorSearch integration", () => {
     try {
       await directStore.initialize();
       await directStore.insert([[1, 0, 0]], ["direct-1"], [{ kind: "direct" }]);
+      const consoleError = jest.spyOn(console, "error").mockImplementation();
+      try {
+        await expect(
+          directStore.insert(
+            [[0, 1, 0]],
+            ["direct-1"],
+            [{ kind: "duplicate" }],
+          ),
+        ).rejects.toThrow("Batch insert failed on 1 record(s)");
+      } finally {
+        consoleError.mockRestore();
+      }
 
       const results = await directStore.search([0, 1, 0], 1);
       expect(results).toHaveLength(1);
