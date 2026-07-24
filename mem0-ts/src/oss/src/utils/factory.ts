@@ -207,7 +207,6 @@ export class VectorStoreFactory {
       case "weaviate":
         return new WeaviateDB(config as any);
       case "oracledb":
-      case "oracle":
         return new OracleAIVectorSearch(config as any);
       default:
         throw new Error(`Unsupported vector store provider: ${provider}`);

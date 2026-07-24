@@ -127,7 +127,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
           filter_test: "operators",
           category: "books",
           rating: 3,
-          title: "Postgres Basics",
+          title: "AI Basics",
           published: false,
           tags: ["db"],
           profile: { tier: "free" },
