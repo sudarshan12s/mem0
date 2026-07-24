@@ -23,6 +23,8 @@ const mockConnection = {
   commit: mockCommit,
   rollback: mockRollback,
   close: mockClose,
+  oracleServerVersion: 2_304_000_000,
+  oracleServerVersionString: "23.4.0.0.0",
 };
 const mockPool = {
   getConnection: mockPoolGetConnection,
@@ -46,6 +48,8 @@ beforeEach(() => {
   mockPoolGetConnection.mockResolvedValue(mockConnection);
   mockCreatePool.mockResolvedValue(mockPool);
   mockGetConnection.mockResolvedValue(mockConnection);
+  mockConnection.oracleServerVersion = 2_304_000_000;
+  mockConnection.oracleServerVersionString = "23.4.0.0.0";
 });
 
 function createStore() {
@@ -100,6 +104,17 @@ describe("OracleAIVectorSearch", () => {
       connectString: "db",
     });
     expect(mockCreatePool).not.toHaveBeenCalled();
+  });
+
+  it("rejects Oracle Database versions earlier than 23.4", async () => {
+    mockConnection.oracleServerVersion = 2_303_000_000;
+    mockConnection.oracleServerVersionString = "23.3.0.0.0";
+    const store = createStore();
+
+    await expect(store.initialize()).rejects.toThrow(
+      "Oracle DB version 23.3.0.0.0 not supported, must be >=23.4 for vector support",
+    );
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 
   it("uses a caller-provided pool", async () => {
@@ -422,6 +437,10 @@ describe("OracleAIVectorSearch", () => {
     await expect(
       store.search([0.1, 0.2, 0.3], 1, { "bad-key": "x" }),
     ).rejects.toThrow("Invalid Oracle metadata filter key");
+
+    await expect(
+      store.search([0.1, 0.2, 0.3], 1, { "display name,alias": "x" }),
+    ).resolves.toEqual([]);
   });
 
   it("is available through the vector store factory", () => {

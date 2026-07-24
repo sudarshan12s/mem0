@@ -9,8 +9,10 @@ import type {
 import { loadPeer } from "../utils/load_peer";
 import type { VectorStore } from "./base";
 
-const METADATA_KEY_PATTERN = /^[a-zA-Z0-9_.\[\]*]+$/;
+// Keep this allowlist aligned with the Python Oracle vector store.
+const METADATA_KEY_PATTERN = /^[a-zA-Z0-9_.\[\],\s*]*$/;
 const MIGRATIONS_TABLE = "mem0_oracle_migrations";
+const MINIMUM_ORACLE_VECTOR_VERSION = 2_304_000_000;
 const DISTANCE_METRICS = new Set([
   "EUCLIDEAN",
   "EUCLIDEAN_SQUARED",
@@ -98,8 +100,23 @@ export class OracleAIVectorSearch implements VectorStore {
       );
       this.ownsClient = true;
     }
+    await this.validateDatabaseVersion();
     await this.createCol();
     await this.createMigrationTable();
+  }
+
+  private async validateDatabaseVersion(): Promise<void> {
+    await this.withConnection(
+      async (connection) => {
+        if (connection.oracleServerVersion < MINIMUM_ORACLE_VECTOR_VERSION) {
+          throw new Error(
+            `Oracle DB version ${connection.oracleServerVersionString} not supported, must be >=23.4 for vector support`,
+          );
+        }
+      },
+      false,
+      true,
+    );
   }
 
   private async withConnection<T>(
