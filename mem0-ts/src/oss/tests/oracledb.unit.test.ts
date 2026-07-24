@@ -224,6 +224,57 @@ describe("OracleAIVectorSearch", () => {
           indexParameters: { neighbors: 1 },
         }),
     ).toThrow("indexParameters.neighbors");
+    expect(
+      () =>
+        new OracleAIVectorSearch({
+          ...baseConfig,
+          indexType: "IVF",
+          indexParameters: { samples_per_partition: 0 },
+        }),
+    ).toThrow("indexParameters.samples_per_partition must be an integer >= 1");
+    expect(
+      () =>
+        new OracleAIVectorSearch({
+          ...baseConfig,
+          distanceMetric: 42 as unknown as "COSINE",
+        }),
+    ).toThrow("Unsupported Oracle distance metric: 42");
+    expect(
+      () =>
+        new OracleAIVectorSearch({
+          ...baseConfig,
+          collectionName: null as unknown as string,
+        }),
+    ).toThrow("collectionName cannot be null or empty");
+    expect(
+      () =>
+        new OracleAIVectorSearch({
+          ...baseConfig,
+          collectionName: "",
+        }),
+    ).toThrow("collectionName cannot be null or empty");
+  });
+
+  it("normalizes case and applies nullish metric and index defaults", () => {
+    expect(
+      () =>
+        new OracleAIVectorSearch({
+          client: mockConnection,
+          collectionName: "normalized_memories",
+          distanceMetric: "cosine" as unknown as "COSINE",
+          indexType: "ivf" as unknown as "HNSW",
+        }),
+    ).not.toThrow();
+    expect(
+      () =>
+        new OracleAIVectorSearch({
+          client: mockConnection,
+          collectionName: "nullish_defaults_memories",
+          distanceMetric: null as unknown as "COSINE",
+          indexType: null as unknown as "HNSW",
+        }),
+    ).not.toThrow();
+    expect(() => new OracleAIVectorSearch()).not.toThrow();
   });
 
   it("defensively validates index parameters if configuration is mutated", async () => {

@@ -13,7 +13,11 @@ import type { VectorStore } from "./base";
 const METADATA_KEY_PATTERN = /^[a-zA-Z0-9_.\[\],\s*]*$/;
 const MIGRATIONS_TABLE = "mem0_oracle_migrations";
 const MINIMUM_ORACLE_VECTOR_VERSION = 2_304_000_000;
-const DISTANCE_METRICS = new Set([
+type DistanceMetric = NonNullable<OracleAIVectorSearchConfig["distanceMetric"]>;
+type IndexType = NonNullable<OracleAIVectorSearchConfig["indexType"]>;
+type IndexParameterRange = readonly [min: number, max: number];
+
+const VALID_DISTANCE_METRICS = new Set<DistanceMetric>([
   "EUCLIDEAN",
   "EUCLIDEAN_SQUARED",
   "COSINE",
@@ -21,6 +25,20 @@ const DISTANCE_METRICS = new Set([
   "HAMMING",
   "MANHATTAN",
 ]);
+const VALID_INDEX_TYPES = new Set<IndexType>(["HNSW", "IVF"]);
+const INDEX_PARAMETER_RANGES: Readonly<
+  Record<IndexType, Readonly<Record<string, IndexParameterRange>>>
+> = {
+  HNSW: {
+    neighbors: [2, 2048],
+    efconstruction: [1, 65535],
+  },
+  IVF: {
+    neighbor_partitions: [1, 10_000_000],
+    samples_per_partition: [1, Infinity],
+    min_vectors_per_partition: [0, Infinity],
+  },
+};
 
 type OracleDriver = typeof import("oracledb");
 type OracleModule = OracleDriver & { default?: OracleDriver };
@@ -33,34 +51,42 @@ export class OracleAIVectorSearch implements VectorStore {
   private readonly collectionName: string;
   private readonly indexName: string;
   private readonly dimension: number;
-  private readonly distanceMetric: string;
-  private readonly indexType: "HNSW" | "IVF";
+  private readonly distanceMetric: DistanceMetric;
+  private readonly indexType: IndexType;
   private driver?: OracleDriver;
   private pool?: OraclePool;
   private connection?: OracleConnection;
   private ownsClient = false;
   private initPromise?: Promise<void>;
 
-  constructor(config: OracleAIVectorSearchConfig) {
+  constructor(config: OracleAIVectorSearchConfig = {}) {
     this.config = config;
-    this.collectionName = quoteIdentifier(config.collectionName || "mem0");
-    this.indexName = quoteIdentifier(
-      config.indexName || `${config.collectionName || "mem0"}_VEC_IDX`,
-    );
-    this.dimension = config.dimension ?? config.embeddingModelDims ?? 1536;
-    this.distanceMetric = (config.distanceMetric || "COSINE").toUpperCase();
-    this.indexType = (config.indexType || "HNSW").toUpperCase() as
-      | "HNSW"
-      | "IVF";
+    const collectionName = config.collectionName as string | null | undefined;
+    if (collectionName === null || collectionName === "") {
+      throw new Error("collectionName cannot be null or empty");
+    }
+    const rawMetric = String(config.distanceMetric ?? "COSINE").toUpperCase();
+    const rawIndexType = String(config.indexType ?? "HNSW").toUpperCase();
 
-    if (!DISTANCE_METRICS.has(this.distanceMetric)) {
+    if (!VALID_DISTANCE_METRICS.has(rawMetric as DistanceMetric)) {
       throw new Error(
-        `Unsupported Oracle distance metric: ${this.distanceMetric}`,
+        `Unsupported Oracle distance metric: ${rawMetric}. Must be one of: ${Array.from(VALID_DISTANCE_METRICS).join(", ")}`,
       );
     }
-    if (this.indexType !== "HNSW" && this.indexType !== "IVF") {
-      throw new Error(`Unsupported Oracle index type: ${this.indexType}`);
+    if (!VALID_INDEX_TYPES.has(rawIndexType as IndexType)) {
+      throw new Error(
+        `Unsupported Oracle index type: ${rawIndexType}. Must be one of: ${Array.from(VALID_INDEX_TYPES).join(", ")}`,
+      );
     }
+
+    const normalizedCollectionName = collectionName ?? "mem0";
+    this.collectionName = quoteIdentifier(normalizedCollectionName);
+    this.indexName = quoteIdentifier(
+      config.indexName ?? `${normalizedCollectionName}_VEC_IDX`,
+    );
+    this.dimension = config.dimension ?? config.embeddingModelDims ?? 1536;
+    this.distanceMetric = rawMetric as DistanceMetric;
+    this.indexType = rawIndexType as IndexType;
     validateIndexParameters(this.indexType, config.indexParameters);
     if (
       config.indexAccuracy !== undefined &&
@@ -603,25 +629,27 @@ function comparisonOperator(
 
 function validateIndexParameters(
   indexType: "HNSW" | "IVF",
-  parameters: Record<string, number> | undefined,
+  parameters?: Record<string, number>,
 ): void {
   if (!parameters) return;
-  const ranges =
-    indexType === "HNSW"
-      ? { neighbors: [2, 2048], efconstruction: [1, 65535] }
-      : {
-          neighbor_partitions: [1, 10_000_000],
-          samples_per_partition: [1, Infinity],
-          min_vectors_per_partition: [0, Infinity],
-        };
+  const ranges = INDEX_PARAMETER_RANGES[indexType];
   for (const [key, value] of Object.entries(parameters)) {
-    const range = ranges[key as keyof typeof ranges];
+    const range = ranges[key];
     if (!range) {
       throw new Error(`Unsupported ${indexType} index parameter: ${key}`);
     }
-    if (!Number.isInteger(value) || value < range[0] || value > range[1]) {
+
+    const [min, max] = range;
+    if (
+      typeof value !== "number" ||
+      !Number.isInteger(value) ||
+      value < min ||
+      value > max
+    ) {
+      const boundsText =
+        max === Infinity ? `>= ${min}` : `between ${min} and ${max}`;
       throw new Error(
-        `indexParameters.${key} must be an integer between ${range[0]} and ${range[1]}`,
+        `indexParameters.${key} must be an integer ${boundsText}`,
       );
     }
   }
