@@ -137,33 +137,43 @@ export class OracleAIVectorSearch implements VectorStore {
   }
 
   async initialize(): Promise<void> {
-    if (!this.initPromise) this.initPromise = this.doInitialize();
+    if (!this.initPromise) {
+      this.initPromise = this.doInitialize().catch((error) => {
+        this.initPromise = undefined;
+        throw error;
+      });
+    }
     return this.initPromise;
   }
 
   private async doInitialize(): Promise<void> {
     const driver = await loadOracleDriver();
     this.driver = driver;
-    if (this.config.client) {
-      if (typeof this.config.client.getConnection === "function") {
-        this.pool = this.config.client;
+    try {
+      if (this.config.client) {
+        if (typeof this.config.client.getConnection === "function") {
+          this.pool = this.config.client;
+        } else {
+          this.connection = this.config.client;
+        }
+      } else if (this.config.useConnectionPool !== false) {
+        this.pool = await driver.createPool(
+          this.config.connectionParams as oracledb.PoolAttributes,
+        );
+        this.ownsClient = true;
       } else {
-        this.connection = this.config.client;
+        this.connection = await driver.getConnection(
+          this.config.connectionParams as oracledb.ConnectionAttributes,
+        );
+        this.ownsClient = true;
       }
-    } else if (this.config.useConnectionPool !== false) {
-      this.pool = await driver.createPool(
-        this.config.connectionParams as oracledb.PoolAttributes,
-      );
-      this.ownsClient = true;
-    } else {
-      this.connection = await driver.getConnection(
-        this.config.connectionParams as oracledb.ConnectionAttributes,
-      );
-      this.ownsClient = true;
+      await this.validateDatabaseVersion();
+      await this.createCol();
+      await this.createMigrationTable();
+    } catch (error) {
+      if (this.ownsClient) await this.close();
+      throw error;
     }
-    await this.validateDatabaseVersion();
-    await this.createCol();
-    await this.createMigrationTable();
   }
 
   private async validateDatabaseVersion(): Promise<void> {
@@ -496,25 +506,38 @@ export class OracleAIVectorSearch implements VectorStore {
 
   async getUserId(): Promise<string> {
     const generated = uuidv4();
-    return this.withConnection(async (connection) => {
-      // Single atomic MERGE handles concurrent race conditions
-      await connection.execute(
-        `MERGE INTO ${MIGRATIONS_TABLE} m
+    try {
+      return await this.withConnection(async (connection) => {
+        await connection.execute(
+          `MERGE INTO ${MIGRATIONS_TABLE} m
        USING (SELECT 1 AS id, :generated_id AS user_id FROM dual) src
        ON (m.id = src.id)
        WHEN NOT MATCHED THEN
          INSERT (id, user_id) VALUES (src.id, src.user_id)`,
-        { generated_id: generated },
-      );
+          { generated_id: generated },
+        );
 
-      const result = await connection.execute<[string]>(
-        `SELECT user_id FROM ${MIGRATIONS_TABLE} WHERE id = 1`,
-        [],
-        { outFormat: this.driver!.OUT_FORMAT_ARRAY },
-      );
+        return this.readUserId(connection);
+      }, true);
+    } catch (error) {
+      // Concurrent MERGE statements can both observe a missing row before one
+      // insert wins. The losing transaction rolls back in withConnection;
+      // reading the winner's committed value completes initialization.
+      if (!isUniqueConstraintError(error)) throw error;
+      return this.withConnection((connection) => this.readUserId(connection));
+    }
+  }
 
-      return String(result.rows![0][0]);
-    }, true);
+  private async readUserId(connection: OracleConnection): Promise<string> {
+    const result = await connection.execute<[string]>(
+      `SELECT user_id FROM ${MIGRATIONS_TABLE} WHERE id = 1`,
+      [],
+      { outFormat: this.driver!.OUT_FORMAT_ARRAY },
+    );
+    const row = result.rows?.[0];
+    if (!row)
+      throw new Error("Failed to retrieve user_id from migration table");
+    return String(row[0]);
   }
 
   async setUserId(userId: string): Promise<void> {
@@ -771,6 +794,16 @@ function jsonPath(key: string): string {
 
 function isPlainObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const oracleError = error as { errorNum?: unknown; message?: unknown };
+  return (
+    oracleError.errorNum === 1 ||
+    (typeof oracleError.message === "string" &&
+      oracleError.message.includes("ORA-00001"))
+  );
 }
 
 function parsePayload(payload: unknown): Record<string, any> {

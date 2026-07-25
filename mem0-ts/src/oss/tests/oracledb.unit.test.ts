@@ -117,6 +117,21 @@ describe("OracleAIVectorSearch", () => {
     expect(mockExecute).not.toHaveBeenCalled();
   });
 
+  it("cleans up an owned pool and retries initialization after a failure", async () => {
+    mockExecute.mockRejectedValueOnce(new Error("DDL Error"));
+    const store = new OracleAIVectorSearch({
+      connectionParams: { user: "oracle_user", connectString: "db" },
+      collectionName: "retry_memories",
+      doCreateIndex: false,
+    });
+
+    await expect(store.initialize()).rejects.toThrow("DDL Error");
+    expect(mockPoolClose).toHaveBeenCalledTimes(1);
+
+    await expect(store.initialize()).resolves.toBeUndefined();
+    expect(mockCreatePool).toHaveBeenCalledTimes(2);
+  });
+
   it("uses a caller-provided pool", async () => {
     const store = new OracleAIVectorSearch({
       client: mockPool,
@@ -533,6 +548,34 @@ describe("OracleAIVectorSearch", () => {
 
     await expect(store.initialize()).rejects.toThrow("DDL Error");
     expect(mockRollback).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a clear error when the migration user ID row is absent", async () => {
+    const store = createStore();
+    await store.initialize();
+    mockExecute.mockClear();
+    mockExecute
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(store.getUserId()).rejects.toThrow(
+      "Failed to retrieve user_id from migration table",
+    );
+  });
+
+  it("reads the winning user ID after a concurrent migration insert", async () => {
+    const store = createStore();
+    await store.initialize();
+    mockExecute.mockClear();
+    mockExecute
+      .mockRejectedValueOnce(
+        Object.assign(new Error("ORA-00001: unique constraint violated"), {
+          errorNum: 1,
+        }),
+      )
+      .mockResolvedValueOnce({ rows: [["concurrent-user"]] });
+
+    await expect(store.getUserId()).resolves.toBe("concurrent-user");
   });
 
   it("does not close caller-provided connections", async () => {
