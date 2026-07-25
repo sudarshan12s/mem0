@@ -2,8 +2,8 @@ import { v4 as uuidv4 } from "uuid";
 import type oracledb from "oracledb";
 
 import type {
-  OracleAIVectorSearchConfig,
   SearchFilters,
+  VectorStoreConfig,
   VectorStoreResult,
 } from "../types";
 import { loadPeer } from "../utils/load_peer";
@@ -44,6 +44,41 @@ type OracleDriver = typeof import("oracledb");
 type OracleModule = OracleDriver & { default?: OracleDriver };
 type OracleConnection = oracledb.Connection;
 type OraclePool = oracledb.Pool;
+
+/** Configuration for the Oracle Database AI Vector Search vector store. */
+interface OracleAIVectorSearchConfig extends VectorStoreConfig {
+  /**
+   * `node-oracledb` connection or pool attributes, such as user, password,
+   * connectString, poolMin, and poolMax.
+   */
+  connectionParams?: Record<string, any>;
+  /** Existing `node-oracledb` Connection or Pool. */
+  client?: any;
+  useConnectionPool?: boolean;
+  embeddingModelDims?: number;
+  /**
+   * Oracle vector distance metric. COSINE search results are exposed as a
+   * normalized similarity score (`1 - distance`, larger is better); all other
+   * metrics return their raw distance in `VectorStoreResult.score`.
+   */
+  distanceMetric?:
+    | "EUCLIDEAN"
+    | "EUCLIDEAN_SQUARED"
+    | "COSINE"
+    | "DOT"
+    | "HAMMING"
+    | "MANHATTAN";
+  doCreateIndex?: boolean;
+  /**
+   * Update existing records with the same ID using MERGE. Defaults to false,
+   * so inserts use the faster INSERT statement and reject duplicate IDs.
+   */
+  mutateOnDuplicate?: boolean;
+  indexType?: "HNSW" | "IVF";
+  indexName?: string;
+  indexParameters?: Record<string, number>;
+  indexAccuracy?: number;
+}
 
 /** Oracle Database AI Vector Search implementation for the OSS SDK. */
 export class OracleAIVectorSearch implements VectorStore {
@@ -188,7 +223,10 @@ export class OracleAIVectorSearch implements VectorStore {
     await this.withConnection(
       (connection) =>
         connection.execute(
-          `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (id NUMBER DEFAULT 1 PRIMARY KEY CHECK (id = 1),user_id VARCHAR2(255) NOT NULL)`,
+          `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+            id NUMBER DEFAULT 1 PRIMARY KEY CHECK (id = 1),
+            user_id VARCHAR2(255) NOT NULL
+          )`,
         ),
       true,
       true,
@@ -203,7 +241,7 @@ export class OracleAIVectorSearch implements VectorStore {
     const accuracy = this.config.indexAccuracy
       ? ` WITH TARGET ACCURACY ${this.config.indexAccuracy}`
       : "";
-    const parameters = this.indexParameters();
+    const parameters = this.buildIndexParameterClause();
     const parameterClause = parameters ? ` PARAMETERS (${parameters})` : "";
     return (
       `CREATE VECTOR INDEX IF NOT EXISTS ${this.indexName} ON ${this.collectionName} (vector) ` +
@@ -211,7 +249,7 @@ export class OracleAIVectorSearch implements VectorStore {
     );
   }
 
-  private indexParameters(): string {
+  private buildIndexParameterClause(): string {
     const parameters = this.config.indexParameters;
     if (!parameters || Object.keys(parameters).length === 0) return "";
     const allowed =
@@ -251,6 +289,12 @@ export class OracleAIVectorSearch implements VectorStore {
     payloads: Record<string, any>[] = [],
   ): Promise<void> {
     if (!vectors.length) return;
+    if (ids.length !== vectors.length) {
+      throw new Error("ids and vectors must have the same length");
+    }
+    if (payloads.length > 0 && payloads.length !== vectors.length) {
+      throw new Error("payloads must be empty or match vectors length");
+    }
 
     await this.initialize();
 

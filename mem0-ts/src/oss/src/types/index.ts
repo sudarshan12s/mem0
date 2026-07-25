@@ -48,41 +48,6 @@ export interface VectorStoreConfig {
   [key: string]: any;
 }
 
-/** Configuration for the Oracle Database AI Vector Search vector store. */
-export interface OracleAIVectorSearchConfig extends VectorStoreConfig {
-  /**
-   * `node-oracledb` connection or pool attributes, such as user, password,
-   * connectString, poolMin, and poolMax.
-   */
-  connectionParams?: Record<string, any>;
-  /** Existing `node-oracledb` Connection or Pool. */
-  client?: any;
-  useConnectionPool?: boolean;
-  embeddingModelDims?: number;
-  /**
-   * Oracle vector distance metric. COSINE search results are exposed as a
-   * normalized similarity score (`1 - distance`, larger is better); all other
-   * metrics return their raw distance in `VectorStoreResult.score`.
-   */
-  distanceMetric?:
-    | "EUCLIDEAN"
-    | "EUCLIDEAN_SQUARED"
-    | "COSINE"
-    | "DOT"
-    | "HAMMING"
-    | "MANHATTAN";
-  doCreateIndex?: boolean;
-  /**
-   * Update existing records with the same ID using MERGE. Defaults to false,
-   * so inserts use the faster INSERT statement and reject duplicate IDs.
-   */
-  mutateOnDuplicate?: boolean;
-  indexType?: "HNSW" | "IVF";
-  indexName?: string;
-  indexParameters?: Record<string, number>;
-  indexAccuracy?: number;
-}
-
 export interface HistoryStoreConfig {
   provider: string;
   config: {

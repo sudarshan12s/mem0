@@ -367,6 +367,25 @@ describe("OracleAIVectorSearch", () => {
     expect(mockCommit).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects insert batches with mismatched IDs or payloads", async () => {
+    const store = createStore();
+
+    await expect(store.insert([[0.1, 0.2, 0.3]], [])).rejects.toThrow(
+      "ids and vectors must have the same length",
+    );
+    await expect(
+      store.insert(
+        [
+          [0.1, 0.2, 0.3],
+          [0.4, 0.5, 0.6],
+        ],
+        ["memory-1", "memory-2"],
+        [{ topic: "oracle" }],
+      ),
+    ).rejects.toThrow("payloads must be empty or match vectors length");
+    expect(mockLoadPeer).not.toHaveBeenCalled();
+  });
+
   it("uses MERGE only when mutateOnDuplicate is enabled", async () => {
     const store = new OracleAIVectorSearch({
       client: mockConnection,
@@ -499,7 +518,7 @@ describe("OracleAIVectorSearch", () => {
 
   it("is available through the vector store factory", () => {
     const { VectorStoreFactory } = require("../src/utils/factory");
-    const store = VectorStoreFactory.create("oracle", {
+    const store = VectorStoreFactory.create("oracledb", {
       client: mockConnection,
       collectionName: "factory_memories",
     });
