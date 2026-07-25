@@ -428,6 +428,7 @@ describe("OracleAIVectorSearch", () => {
       ).rejects.toThrow("Batch insert failed on 2 record(s)");
 
       expect(mockCommit).not.toHaveBeenCalled();
+      expect(mockRollback).toHaveBeenCalledTimes(1);
     } finally {
       consoleError.mockRestore();
     }
@@ -526,12 +527,12 @@ describe("OracleAIVectorSearch", () => {
     expect(store).toBeInstanceOf(OracleAIVectorSearch);
   });
 
-  it("relies on node-oracledb automatic rollback if creation fails", async () => {
+  it("rolls back a direct connection if creation fails", async () => {
     mockExecute.mockRejectedValueOnce(new Error("DDL Error"));
     const store = createStore();
 
     await expect(store.initialize()).rejects.toThrow("DDL Error");
-    expect(mockRollback).not.toHaveBeenCalled();
+    expect(mockRollback).toHaveBeenCalledTimes(1);
   });
 
   it("does not close caller-provided connections", async () => {

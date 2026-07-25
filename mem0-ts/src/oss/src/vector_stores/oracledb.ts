@@ -194,8 +194,14 @@ export class OracleAIVectorSearch implements VectorStore {
       const result = await operation(connection);
       if (commit) await connection.commit();
       return result;
+    } catch (error) {
+      // Pooled connections roll back when released, but a direct connection is
+      // retained for the store's lifetime. Roll back explicitly so a later
+      // successful operation cannot commit a partially failed write.
+      if (!this.pool) await connection.rollback();
+      throw error;
     } finally {
-      // the transaction is left uncommitted; node-oracledb rolls it back automatically.
+      // Releasing a pooled connection also rolls back any remaining work.
       if (this.pool) await connection.close();
     }
   }
@@ -304,16 +310,16 @@ export class OracleAIVectorSearch implements VectorStore {
     const mergeSql = `
     MERGE INTO ${this.collectionName} target
     USING (
-      SELECT 
-        :1 AS id, 
-        :2 AS vector, 
-        :3 AS payload 
+      SELECT
+        :1 AS id,
+        :2 AS vector,
+        :3 AS payload
       FROM dual
     ) src
     ON (target.id = src.id)
     WHEN MATCHED THEN
-      UPDATE SET 
-        target.vector = src.vector, 
+      UPDATE SET
+        target.vector = src.vector,
         target.payload = src.payload
     WHEN NOT MATCHED THEN
       INSERT (id, vector, payload)
