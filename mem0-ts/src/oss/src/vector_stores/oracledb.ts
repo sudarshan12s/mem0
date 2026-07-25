@@ -93,6 +93,7 @@ export class OracleAIVectorSearch implements VectorStore {
   private connection?: OracleConnection;
   private ownsClient = false;
   private initPromise?: Promise<void>;
+  private closePromise?: Promise<void>;
 
   constructor(config: OracleAIVectorSearchConfig = {}) {
     this.config = config;
@@ -555,10 +556,30 @@ export class OracleAIVectorSearch implements VectorStore {
     }, true);
   }
 
+  /**
+   * Closes only connections or pools created by this store. Caller-provided
+   * clients remain the caller's responsibility. This method is idempotent;
+   * concurrent callers await the same in-flight close operation.
+   */
   async close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
     if (!this.ownsClient) return;
-    if (this.pool) await this.pool.close();
-    if (this.connection) await this.connection.close();
+
+    const pool = this.pool;
+    const connection = this.connection;
+    this.pool = undefined;
+    this.connection = undefined;
+    this.ownsClient = false;
+    this.closePromise = (async () => {
+      if (pool) await pool.close();
+      if (connection) await connection.close();
+    })();
+
+    try {
+      await this.closePromise;
+    } finally {
+      this.closePromise = undefined;
+    }
   }
 }
 

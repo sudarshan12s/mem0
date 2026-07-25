@@ -588,6 +588,20 @@ describe("OracleAIVectorSearch", () => {
     expect(mockClose).not.toHaveBeenCalled();
   });
 
+  it("closes an owned pool at most once", async () => {
+    const store = new OracleAIVectorSearch({
+      connectionParams: { user: "oracle_user", connectString: "db" },
+      collectionName: "close_once_memories",
+      doCreateIndex: false,
+    });
+    await store.initialize();
+
+    await Promise.all([store.close(), store.close()]);
+    await store.close();
+
+    expect(mockPoolClose).toHaveBeenCalledTimes(1);
+  });
+
   it("handles nested metadata filter keys", async () => {
     const store = createStore();
     await store.search([0.1, 0.2, 0.3], 1, { "user.id": "123" });
