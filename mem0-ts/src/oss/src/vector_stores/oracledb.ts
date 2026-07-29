@@ -51,9 +51,12 @@ interface OracleAIVectorSearchConfig extends VectorStoreConfig {
    * `node-oracledb` connection or pool attributes, such as user, password,
    * connectString, poolMin, and poolMax.
    */
-  connectionParams?: Record<string, any>;
+  connectionParams?:
+    | oracledb.ConnectionAttributes
+    | oracledb.PoolAttributes;
+
   /** Existing `node-oracledb` Connection or Pool. */
-  client?: any;
+  client?: oracledb.Connection | oracledb.Pool;
   useConnectionPool?: boolean;
   embeddingModelDims?: number;
   /**
@@ -152,7 +155,7 @@ export class OracleAIVectorSearch implements VectorStore {
     this.driver = driver;
     try {
       if (this.config.client) {
-        if (typeof this.config.client.getConnection === "function") {
+         if ("getConnection" in this.config.client) {
           this.pool = this.config.client;
         } else {
           this.connection = this.config.client;
