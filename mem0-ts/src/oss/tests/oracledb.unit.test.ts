@@ -933,7 +933,7 @@ describeUnit("OracleAIVectorSearch unit", () => {
     );
   });
 
-  it("supports pgvector-compatible comparison, membership, and boolean filters", async () => {
+  it("supports compatible comparison, membership, and boolean filters", async () => {
     const store = createStore();
     await store.search([0.1, 0.2, 0.3], 5, {
       $or: [
@@ -986,7 +986,7 @@ describeUnit("OracleAIVectorSearch unit", () => {
     ).rejects.toThrow("Unsupported filter operator: unsupported");
   });
 
-  it("supports every remaining pgvector filter operator and shorthand", async () => {
+  it("supports every remaining filter operator and shorthand", async () => {
     const store = createStore();
     await store.search([0.1, 0.2, 0.3], 1, {
       $and: [{ visible: "*" }, { score: { $eq: 7, ne: 0, gt: 1, lt: 10 } }],
