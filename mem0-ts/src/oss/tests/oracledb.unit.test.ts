@@ -83,6 +83,7 @@ describeIntegration("OracleAIVectorSearch integration", () => {
       doCreateIndex: false,
     });
     await store.initialize();
+    expect(mockLoadPeer).not.toHaveBeenCalled();
   });
 
   beforeEach(() => {
@@ -635,6 +636,12 @@ describeUnit("OracleAIVectorSearch unit", () => {
           collectionName: "",
         }),
     ).toThrow("collectionName cannot be empty");
+    expect(() => new OracleAIVectorSearch()).toThrow(
+      "Must provide at least one of `connectionParams` and `client`",
+    );
+    expect(() => new OracleAIVectorSearch({ connectionParams: {} })).toThrow(
+      "Must provide at least one of `connectionParams` and `client`",
+    );
   });
 
   it("normalizes case and applies nullish metric and index defaults", () => {
@@ -656,7 +663,6 @@ describeUnit("OracleAIVectorSearch unit", () => {
           indexType: null as unknown as "HNSW",
         }),
     ).not.toThrow();
-    expect(() => new OracleAIVectorSearch()).not.toThrow();
   });
 
   it("defensively validates index parameters if configuration is mutated", async () => {

@@ -35,6 +35,8 @@ const INDEX_PARAMETER_RANGES: Readonly<
   },
   IVF: {
     neighbor_partitions: [1, 10_000_000],
+    // Match Python validation: enforce only the documented lower bound.
+    // Oracle validates any dataset-dependent upper limits.
     samples_per_partition: [1, Infinity],
     min_vectors_per_partition: [0, Infinity],
   },
@@ -97,6 +99,16 @@ export class OracleAIVectorSearch implements VectorStore {
 
   constructor(config: OracleAIVectorSearchConfig = {}) {
     this.config = config;
+
+    if (
+      !config.client &&
+      (!config.connectionParams ||
+        Object.keys(config.connectionParams).length === 0)
+    ) {
+      throw new Error(
+        "Must provide at least one of `connectionParams` and `client`",
+      );
+    }
 
     const collectionName = config.collectionName?.trim();
     if (collectionName === "") {
