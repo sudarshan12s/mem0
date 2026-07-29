@@ -196,25 +196,46 @@ export class OracleAIVectorSearch implements VectorStore {
     commit = false,
     skipInitialize = false,
   ): Promise<T> {
-    if (!skipInitialize) await this.initialize();
+    if (!skipInitialize) {
+      await this.initialize();
+    }
+
     const connection = this.pool
       ? await this.pool.getConnection()
       : this.connection;
-    if (!connection) throw new Error("Oracle connection is not initialized");
-    try {
-      const result = await operation(connection);
-      if (commit) await connection.commit();
-      return result;
-    } catch (error) {
-      // Pooled connections roll back when released, but a direct connection is
-      // retained for the store's lifetime. Roll back explicitly so a later
-      // successful operation cannot commit a partially failed write.
-      if (!this.pool) await connection.rollback();
-      throw error;
-    } finally {
-      // Releasing a pooled connection also rolls back any remaining work.
-      if (this.pool) await connection.close();
+    if (!connection) {
+      throw new Error("Oracle connection is not initialized");
     }
+
+    let result: T;
+    try {
+      result = await operation(connection);
+      if (commit) {
+        await connection.commit();
+      }
+    } catch (error) {
+      if (!this.pool) {
+        // Pooled connections roll back when released, but a direct connection is
+        // retained for the store's lifetime. Roll back explicitly so a later
+        // successful operation cannot commit a partially failed write.
+        try {
+          await connection.rollback();
+        } catch (rollbackError) {
+          console.error(
+            "[OracleAIVectorSearch] Failed to roll back transaction:",
+            rollbackError,
+          );
+        }
+      }
+
+      throw error;
+    }
+
+    if (this.pool) {
+      await connection.close();
+    }
+
+    return result;
   }
 
   private async createCol(): Promise<void> {
@@ -231,7 +252,7 @@ export class OracleAIVectorSearch implements VectorStore {
           await connection.execute(this.createIndexDdl());
         }
       },
-      true,
+      false,
       true,
     );
   }
@@ -241,15 +262,14 @@ export class OracleAIVectorSearch implements VectorStore {
       (connection) =>
         connection.execute(
           `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
-            id NUMBER DEFAULT 1 PRIMARY KEY CHECK (id = 1),
-            user_id VARCHAR2(255) NOT NULL
-          )`,
+          id NUMBER DEFAULT 1 PRIMARY KEY CHECK (id = 1),
+          user_id VARCHAR2(255) NOT NULL
+        )`,
         ),
-      true,
+      false,
       true,
     );
   }
-
   private createIndexDdl(): string {
     const organization =
       this.indexType === "HNSW"
