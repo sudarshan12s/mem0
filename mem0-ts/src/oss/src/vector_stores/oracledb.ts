@@ -97,10 +97,14 @@ export class OracleAIVectorSearch implements VectorStore {
 
   constructor(config: OracleAIVectorSearchConfig = {}) {
     this.config = config;
-    const collectionName = config.collectionName as string | null | undefined;
-    if (collectionName === null || collectionName === "") {
-      throw new Error("collectionName cannot be null or empty");
+
+    const collectionName = config.collectionName?.trim();
+    if (collectionName === "") {
+      throw new Error("collectionName cannot be empty");
     }
+
+    const normalizedCollectionName = collectionName ?? "mem0";
+
     const rawMetric = String(config.distanceMetric ?? "COSINE").toUpperCase();
     const rawIndexType = String(config.indexType ?? "HNSW").toUpperCase();
 
@@ -109,21 +113,23 @@ export class OracleAIVectorSearch implements VectorStore {
         `Unsupported Oracle distance metric: ${rawMetric}. Must be one of: ${Array.from(VALID_DISTANCE_METRICS).join(", ")}`,
       );
     }
+
     if (!VALID_INDEX_TYPES.has(rawIndexType as IndexType)) {
       throw new Error(
         `Unsupported Oracle index type: ${rawIndexType}. Must be one of: ${Array.from(VALID_INDEX_TYPES).join(", ")}`,
       );
     }
 
-    const normalizedCollectionName = collectionName ?? "mem0";
     this.collectionName = quoteIdentifier(normalizedCollectionName);
     this.indexName = quoteIdentifier(
       config.indexName ?? `${normalizedCollectionName}_VEC_IDX`,
     );
-    this.dimension = config.dimension ?? 1536;
+    this.dimension = config.embeddingModelDims || config.dimension || 1536;
     this.distanceMetric = rawMetric as DistanceMetric;
     this.indexType = rawIndexType as IndexType;
+
     validateIndexParameters(this.indexType, config.indexParameters);
+
     if (
       config.indexAccuracy !== undefined &&
       (!Number.isInteger(config.indexAccuracy) ||
@@ -132,6 +138,7 @@ export class OracleAIVectorSearch implements VectorStore {
     ) {
       throw new Error("indexAccuracy must be an integer between 1 and 100");
     }
+
     if (!Number.isInteger(this.dimension) || this.dimension <= 0) {
       throw new Error("dimension must be a positive integer");
     }
@@ -745,7 +752,8 @@ function validateIndexParameters(
   indexType: "HNSW" | "IVF",
   parameters?: Record<string, number>,
 ): void {
-  if (!parameters) return;
+  if (parameters == null) return;
+
   const ranges = INDEX_PARAMETER_RANGES[indexType];
   for (const [key, value] of Object.entries(parameters)) {
     const range = ranges[key];
@@ -754,12 +762,7 @@ function validateIndexParameters(
     }
 
     const [min, max] = range;
-    if (
-      typeof value !== "number" ||
-      !Number.isInteger(value) ||
-      value < min ||
-      value > max
-    ) {
+    if (!Number.isInteger(value) || value < min || value > max) {
       const boundsText =
         max === Infinity ? `>= ${min}` : `between ${min} and ${max}`;
       throw new Error(
@@ -838,8 +841,12 @@ function isPlainObject(value: unknown): value is Record<string, any> {
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const oracleError = error as { errorNum?: unknown; message?: unknown };
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const oracleError = error as Partial<oracledb.DBError>;
+
   return (
     oracleError.errorNum === 1 ||
     (typeof oracleError.message === "string" &&
