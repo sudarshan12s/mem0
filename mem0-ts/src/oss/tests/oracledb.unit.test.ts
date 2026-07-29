@@ -317,6 +317,9 @@ describeIntegration("OracleAIVectorSearch integration", () => {
       } finally {
         consoleError.mockRestore();
       }
+      expect(await directStore.get("direct-1")).toMatchObject({
+        payload: { kind: "direct" },
+      });
       const results = await directStore.search([0, 1, 0], 1);
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
@@ -355,6 +358,54 @@ describeIntegration("OracleAIVectorSearch integration", () => {
         id: "indexed-1",
         payload: { kind: "indexed" },
       });
+      expect(results[0]?.score).toBeCloseTo(1, 4);
+    } finally {
+      await indexedStore.deleteCol();
+      await indexedStore.close();
+    }
+  });
+
+  it("creates and uses an IVF vector index after seeding vectors", async () => {
+    const indexedCollectionName = `${collectionName}_IVF`;
+    const seedStore = new OracleAIVectorSearch({
+      connectionParams: oracleConfig,
+      collectionName: indexedCollectionName,
+      dimension: 3,
+      distanceMetric: "COSINE",
+      doCreateIndex: false,
+    });
+    const indexedStore = new OracleAIVectorSearch({
+      connectionParams: oracleConfig,
+      collectionName: indexedCollectionName,
+      dimension: 3,
+      distanceMetric: "COSINE",
+      indexType: "IVF",
+      indexAccuracy: 90,
+      indexParameters: {
+        neighbor_partitions: 1,
+        samples_per_partition: 1,
+        min_vectors_per_partition: 0,
+      },
+      doCreateIndex: true,
+    });
+
+    try {
+      await seedStore.initialize();
+      await seedStore.insert(
+        [
+          [1, 0, 0],
+          [0, 1, 0],
+          [0, 0, 1],
+        ],
+        ["ivf-1", "ivf-2", "ivf-3"],
+        [{ kind: "ivf" }, { kind: "ivf" }, { kind: "ivf" }],
+      );
+      await seedStore.close();
+
+      await indexedStore.initialize();
+      const results = await indexedStore.search([1, 0, 0], 1);
+      expect(results).toHaveLength(1);
+      expect(results[0]?.id).toBe("ivf-1");
       expect(results[0]?.score).toBeCloseTo(1, 4);
     } finally {
       await indexedStore.deleteCol();
