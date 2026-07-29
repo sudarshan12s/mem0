@@ -19,7 +19,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
     store = new OracleAIVectorSearch({
       connectionParams: oracleConfig,
       collectionName,
-      embeddingModelDims: 3,
+      dimension: 3,
       distanceMetric: "COSINE",
       useConnectionPool: true,
       mutateOnDuplicate: true,
@@ -242,7 +242,7 @@ describeOracle("OracleAIVectorSearch integration", () => {
     const directStore = new OracleAIVectorSearch({
       connectionParams: oracleConfig,
       collectionName: directCollectionName,
-      embeddingModelDims: 3,
+      dimension: 3,
       distanceMetric: "EUCLIDEAN",
       useConnectionPool: false,
       doCreateIndex: false,

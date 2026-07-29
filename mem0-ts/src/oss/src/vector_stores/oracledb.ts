@@ -51,14 +51,11 @@ interface OracleAIVectorSearchConfig extends VectorStoreConfig {
    * `node-oracledb` connection or pool attributes, such as user, password,
    * connectString, poolMin, and poolMax.
    */
-  connectionParams?:
-    | oracledb.ConnectionAttributes
-    | oracledb.PoolAttributes;
+  connectionParams?: oracledb.ConnectionAttributes | oracledb.PoolAttributes;
 
   /** Existing `node-oracledb` Connection or Pool. */
   client?: oracledb.Connection | oracledb.Pool;
   useConnectionPool?: boolean;
-  embeddingModelDims?: number;
   /**
    * Oracle vector distance metric. COSINE search results are exposed as a
    * normalized similarity score (`1 - distance`, larger is better); all other
@@ -123,7 +120,7 @@ export class OracleAIVectorSearch implements VectorStore {
     this.indexName = quoteIdentifier(
       config.indexName ?? `${normalizedCollectionName}_VEC_IDX`,
     );
-    this.dimension = config.dimension ?? config.embeddingModelDims ?? 1536;
+    this.dimension = config.dimension ?? 1536;
     this.distanceMetric = rawMetric as DistanceMetric;
     this.indexType = rawIndexType as IndexType;
     validateIndexParameters(this.indexType, config.indexParameters);
@@ -136,7 +133,7 @@ export class OracleAIVectorSearch implements VectorStore {
       throw new Error("indexAccuracy must be an integer between 1 and 100");
     }
     if (!Number.isInteger(this.dimension) || this.dimension <= 0) {
-      throw new Error("embeddingModelDims must be a positive integer");
+      throw new Error("dimension must be a positive integer");
     }
   }
 
@@ -155,7 +152,7 @@ export class OracleAIVectorSearch implements VectorStore {
     this.driver = driver;
     try {
       if (this.config.client) {
-         if ("getConnection" in this.config.client) {
+        if ("getConnection" in this.config.client) {
           this.pool = this.config.client;
         } else {
           this.connection = this.config.client;

@@ -56,7 +56,7 @@ function createStore() {
   return new OracleAIVectorSearch({
     client: mockConnection,
     collectionName: "oracle_memories",
-    embeddingModelDims: 3,
+    dimension: 3,
     doCreateIndex: false,
   });
 }
@@ -161,7 +161,7 @@ describe("OracleAIVectorSearch", () => {
     const store = new OracleAIVectorSearch({
       client: mockConnection,
       collectionName: "configured_memories",
-      embeddingModelDims: 8,
+      dimension: 8,
       distanceMetric: "DOT",
       doCreateIndex: true,
       indexType: "IVF",
@@ -206,8 +206,8 @@ describe("OracleAIVectorSearch", () => {
     };
 
     expect(
-      () => new OracleAIVectorSearch({ ...baseConfig, embeddingModelDims: 0 }),
-    ).toThrow("embeddingModelDims");
+      () => new OracleAIVectorSearch({ ...baseConfig, dimension: 0 }),
+    ).toThrow("dimension");
     expect(
       () =>
         new OracleAIVectorSearch({
@@ -358,7 +358,9 @@ describe("OracleAIVectorSearch", () => {
         "CREATE TABLE IF NOT EXISTS mem0_oracle_migrations",
       ),
     );
-    expect(mockCommit).toHaveBeenCalledTimes(2);
+    // Oracle DDL commits implicitly; createCol and createMigrationTable do not
+    // issue redundant explicit commits.
+    expect(mockCommit).not.toHaveBeenCalled();
   });
 
   it("binds Float32 vectors and payloads using Oracle vector and JSON types", async () => {
@@ -405,7 +407,7 @@ describe("OracleAIVectorSearch", () => {
     const store = new OracleAIVectorSearch({
       client: mockConnection,
       collectionName: "upsert_memories",
-      embeddingModelDims: 3,
+      dimension: 3,
       doCreateIndex: false,
       mutateOnDuplicate: true,
     });
@@ -487,7 +489,7 @@ describe("OracleAIVectorSearch", () => {
     const store = new OracleAIVectorSearch({
       client: mockConnection,
       collectionName: "oracle_memories",
-      embeddingModelDims: 3,
+      dimension: 3,
       distanceMetric: "EUCLIDEAN",
       doCreateIndex: false,
     });
