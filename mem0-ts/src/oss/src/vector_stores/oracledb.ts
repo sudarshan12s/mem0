@@ -26,6 +26,16 @@ const VALID_DISTANCE_METRICS = new Set<DistanceMetric>([
   "MANHATTAN",
 ]);
 const VALID_INDEX_TYPES = new Set<IndexType>(["HNSW", "IVF"]);
+const SCORE_FROM_DISTANCE: Readonly<
+  Record<DistanceMetric, (distance: number) => number>
+> = {
+  COSINE: (distance) => Math.max(0, Math.min(1, 1 - distance)),
+  EUCLIDEAN: (distance) => 1 / (1 + Math.max(0, distance)),
+  EUCLIDEAN_SQUARED: (distance) => 1 / (1 + Math.sqrt(Math.max(0, distance))),
+  HAMMING: (distance) => 1 / (1 + Math.max(0, distance)),
+  MANHATTAN: (distance) => 1 / (1 + Math.max(0, distance)),
+  DOT: (distance) => -distance,
+};
 const INDEX_PARAMETER_RANGES: Readonly<
   Record<IndexType, Readonly<Record<string, IndexParameterRange>>>
 > = {
@@ -58,11 +68,7 @@ interface OracleAIVectorSearchConfig extends VectorStoreConfig {
   /** Existing `node-oracledb` Connection or Pool. */
   client?: oracledb.Connection | oracledb.Pool;
   useConnectionPool?: boolean;
-  /**
-   * Oracle vector distance metric. COSINE search results are exposed as a
-   * normalized similarity score (`1 - distance`, larger is better); all other
-   * metrics return their raw distance in `VectorStoreResult.score`.
-   */
+  /** Oracle vector distance metric. Search results use higher-is-better scores. */
   distanceMetric?:
     | "EUCLIDEAN"
     | "EUCLIDEAN_SQUARED"
@@ -453,13 +459,8 @@ export class OracleAIVectorSearch implements VectorStore {
         return {
           id: row[0],
           payload: parsePayload(row[1]),
-          // Match other vector stores cosine-score convention: larger is more similar.
-          // Other Oracle metrics remain distances because they have no common,
-          // lossless conversion to a similarity score.
-          score:
-            this.distanceMetric === "COSINE"
-              ? Math.max(0, Math.min(1, 1 - distance))
-              : distance,
+          // Keep score semantics aligned with the Python Oracle vector store.
+          score: SCORE_FROM_DISTANCE[this.distanceMetric](distance),
         };
       });
     });
