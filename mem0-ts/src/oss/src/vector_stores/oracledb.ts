@@ -427,11 +427,11 @@ export class OracleAIVectorSearch implements VectorStore {
     topK = 5,
     filters?: SearchFilters,
   ): Promise<VectorStoreResult[]> {
-    const { clause, binds } = buildFilters(filters);
+    const { clause, binds, hasFilter } = buildFilters(filters);
     // Oracle's vector index transform can be used only when there is no
     // metadata predicate. Applying it to a filtered query may select the
     // approximate top-k rows before the filter is evaluated.
-    const selectClause = clause
+    const selectClause = hasFilter
       ? "SELECT"
       : `SELECT /*+ VECTOR_INDEX_TRANSFORM(${this.collectionName}) */`;
     const sql = `${selectClause} id, payload, VECTOR_DISTANCE(vector, :query_vector, ${this.distanceMetric}) AS distance
@@ -650,15 +650,17 @@ type FilterState = {
 function buildFilters(filters?: SearchFilters): {
   clause: string;
   binds: Record<string, unknown>;
+  hasFilter: boolean;
 } {
   if (!filters || Object.keys(filters).length === 0) {
-    return { clause: "", binds: {} };
+    return { clause: "", binds: {}, hasFilter: false };
   }
 
   const state: FilterState = { binds: {}, nextParameter: 0 };
   return {
     clause: `WHERE ${buildFilterConditions(filters, state)}`,
     binds: state.binds,
+    hasFilter: true,
   };
 }
 

@@ -8,6 +8,14 @@ const oracleConfig = {
   connectString: process.env.ORACLE_DSN,
 };
 const hasOracleCredentials = Object.values(oracleConfig).every(Boolean);
+const hasOracleDriver = (() => {
+  try {
+    require.resolve("oracledb");
+    return true;
+  } catch {
+    return false;
+  }
+})();
 const mockLoadPeer = jest.fn();
 let mockUseDriver = true;
 
@@ -65,7 +73,8 @@ beforeEach(() => {
   mockConnection.oracleServerVersionString = "23.4.0.0.0";
 });
 
-const describeIntegration = hasOracleCredentials ? describe : describe.skip;
+const describeIntegration =
+  hasOracleCredentials && hasOracleDriver ? describe : describe.skip;
 
 describeIntegration("OracleAIVectorSearch integration", () => {
   let store: InstanceType<typeof OracleAIVectorSearch>;
@@ -514,10 +523,7 @@ describeUnit("OracleAIVectorSearch unit", () => {
   });
 
   it("loads the optional driver through its default module export", async () => {
-    mockLoadPeer.mockImplementationOnce(async (_name, _feature, load) => {
-      await load();
-      return { default: mockDriver };
-    });
+    mockLoadPeer.mockResolvedValueOnce({ default: mockDriver });
     const store = createStore();
 
     await store.initialize();
@@ -885,6 +891,16 @@ describeUnit("OracleAIVectorSearch unit", () => {
     );
     expect(mockExecute.mock.calls.at(-1)?.[0]).toContain(
       "FETCH APPROX FIRST :limit ROWS ONLY",
+    );
+  });
+
+  it("uses VECTOR_INDEX_TRANSFORM when given an empty filter object", async () => {
+    const store = createStore();
+
+    await store.search([0.1, 0.2, 0.3], 1, {});
+
+    expect(mockExecute.mock.calls.at(-1)?.[0]).toContain(
+      'SELECT /*+ VECTOR_INDEX_TRANSFORM("oracle_memories") */',
     );
   });
 
