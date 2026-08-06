@@ -46,8 +46,61 @@ messages = [
     {"role": "assistant", "content": "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future."}
 ]
 m.add(messages, user_id="alice", metadata={"category": "movies"})
+
 ```
+
+```typescript TypeScript
+import { Memory } from "mem0ai/oss";
+
+const memory = new Memory({
+  vectorStore: {
+    provider: "oracledb",
+    config: {
+      collectionName: "mem0",
+      dimension: 1536,
+      connectionParams: {
+        user: process.env.ORACLE_USERNAME,
+        password: process.env.ORACLE_PASSWORD,
+        connectString: process.env.ORACLE_DSN,
+      },
+      useConnectionPool: true,
+      distanceMetric: "COSINE",
+    },
+  },
+});
+
+const messages = [
+  {
+    role: "user",
+    content: "I'm planning to watch a movie tonight. Any recommendations?",
+  },
+  {
+    role: "assistant",
+    content: "How about thriller movies? They can be quite engaging.",
+  },
+  {
+    role: "user",
+    content: "I'm not a big fan of thriller movies but I love sci-fi movies.",
+  },
+  {
+    role: "assistant",
+    content: "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future.",
+  },
+];
+
+await memory.add(messages, {
+  userId: "alice",
+  metadata: { category: "movies" },
+});
+```
+
 </CodeGroup>
+
+For TypeScript, install the optional Oracle driver alongside `mem0ai`:
+
+```bash
+pnpm add oracledb
+```
 
 To reuse a connection or pool you already manage, pass it as `client` instead of `connection_params`:
 
@@ -108,7 +161,7 @@ For the full list of supported options, see the Oracle [`CREATE VECTOR INDEX`](h
 
 ### Search scores
 
-Oracle returns a distance from `VECTOR_DISTANCE`, which Mem0 converts to a `score` where higher means more similar. `COSINE` and the other non-negative metrics produce scores in the range `[0, 1]`. `DOT` returns the inner product, which can fall outside that range.
+Oracle returns a distance from `VECTOR_DISTANCE`, which Mem0 converts to a `score` where higher means more similar. `COSINE` uses `1 - distance`; `EUCLIDEAN`, `EUCLIDEAN_SQUARED`, `HAMMING`, and `MANHATTAN` use a reciprocal similarity; and `DOT` negates Oracle's distance value. The non-negative metrics produce scores in the range `[0, 1]`; `DOT` can fall outside that range.
 
 ### Metadata filters
 
